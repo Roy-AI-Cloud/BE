@@ -104,18 +104,27 @@ SBERT_MODEL=sentence-transformers/xlm-r-100langs-bert-base-nli-stsb-mean-tokens
 KOBERT_MODEL=monologg/kobert
 ```
 
-### 3. 데이터베이스 초기화 혹은 팀원에게 전달받기
+### 3. 데이터베이스 초기화
 
 ```bash
 # 데이터베이스 테이블 생성
 python -c "from app.core.database import create_db_and_tables; create_db_and_tables()"
 
+# 스키마 업데이트 (썸네일, 댓글 테이블 추가)
+python scripts/update_schema.py
+
 # 유튜버 데이터 수집 (YouTube API 할당량 필요)
-python crawler.py
+python scripts/crawler.py
 
 # 샘플 비디오 데이터 생성
-python create_sample_videos.py
+python scripts/create_sample_videos.py
+
+# 썸네일 및 댓글 데이터 추가
+python scripts/add_sample_thumbnails.py
+python scripts/add_sample_comments.py
 ```
+
+**참고**: 자세한 스크립트 사용법은 [`scripts/README.md`](./scripts/README.md)를 참조하세요.
 
 ### 4. 서버 실행
 

@@ -77,7 +77,7 @@ def analyze_sentiment(
     channel_id: str,
     session: Session = Depends(get_db_session)
 ):
-    """감정 분석 (실제 KoBERT 분석)"""
+    """감정 분석 (실제 댓글 데이터 기반)"""
     
     from app.core.models import Video
     from app.services.roi_service import roi_service
@@ -89,34 +89,28 @@ def analyze_sentiment(
     if not project or not influencer:
         raise HTTPException(status_code=404, detail="프로젝트 또는 채널을 찾을 수 없습니다")
     
-    # 해당 채널의 비디오 데이터 조회
-    videos = session.exec(
-        select(Video).where(Video.channel_id == channel_id)
-    ).all()
+    # 해당 채널의 댓글 데이터 조회
+    cursor = session.connection().execute("""
+        SELECT comment_text FROM comment 
+        WHERE channel_id = ? 
+        ORDER BY like_count DESC 
+        LIMIT 50
+    """, (channel_id,))
     
-    # 샘플 댓글 생성 (실제 댓글 데이터가 없으므로)
-    sample_comments = []
-    for video in videos:
-        # 조회수와 좋아요 수 기반으로 샘플 댓글 생성
-        views = video.view_count or 1000
-        likes = video.like_count or 10
-        
-        if likes / views > 0.05:  # 좋아요 비율이 높으면 긍정적
-            sample_comments.extend([
-                "정말 유용한 영상이네요!", "감사합니다", "도움이 많이 됐어요",
-                "최고예요", "구독했어요"
-            ])
-        elif likes / views < 0.01:  # 좋아요 비율이 낮으면 부정적
-            sample_comments.extend([
-                "별로네요", "아쉬워요", "기대했는데", "다음엔 더 좋게"
-            ])
-        else:  # 보통이면 중립적
-            sample_comments.extend([
-                "잘 봤어요", "괜찮네요", "그냥 그래요", "보통이에요"
-            ])
+    comments = [row[0] for row in cursor.fetchall()]
+    
+    if not comments:
+        # 댓글이 없으면 기본값
+        return SentimentScore(
+            score=65.0,
+            positive_ratio=0.60,
+            negative_ratio=0.25,
+            neutral_ratio=0.15,
+            total_comments=0
+        )
     
     # 실제 감성분석 서비스 사용
-    result = roi_service.analyze_sentiment(channel_id, sample_comments)
+    result = roi_service.analyze_sentiment(channel_id, comments)
     
     return result
 

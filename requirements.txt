@@ -1,0 +1,32 @@
+# FastAPI 및 웹 프레임워크
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-dotenv
+python-multipart  # 파일 업로드용
+httpx
+
+# 데이터베이스
+sqlmodel
+
+# 스케줄링
+apscheduler
+schedule
+
+# AI/ML 모델
+transformers
+torch
+torchvision
+kobert-transformers
+sentence-transformers
+scikit-learn
+
+# 이미지 처리
+Pillow
+
+# 개발 도구 (선택사항)
+pytest
+black
+isort
+flake8

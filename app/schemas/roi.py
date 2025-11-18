@@ -12,9 +12,9 @@ class BrandCompatibilityRequest(BaseModel):
     brand_image_base64: Optional[str] = Field(None, description="제품 이미지 Base64")
 
 class WeightConfig(BaseModel):
-    brand_image_weight: float = Field(0.4, ge=0, le=1)
+    brand_image_weight: float = Field(0.3, ge=0, le=1)
     sentiment_weight: float = Field(0.3, ge=0, le=1)
-    roi_weight: float = Field(0.3, ge=0, le=1)
+    roi_weight: float = Field(0.4, ge=0, le=1)
 
 class SimulatorRequest(BaseModel):
     channel_id: str = Field(..., description="채널 ID")

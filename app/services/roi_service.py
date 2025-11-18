@@ -9,11 +9,23 @@ class ROIService:
     """ROI 분석 관련 서비스"""
     
     def analyze_sentiment(self, channel_id: str, comments: List[str]) -> SentimentScore:
-        """감성 분석 수행"""
+        """감성 분석 수행 - 극단적 점수 분포"""
         sentiment_data = calculate_sentiment_score(comments)
         
+        # 기본 점수에서 극단적 조정
+        base_score = sentiment_data["score"]
+        
+        # 긍정 비율이 높으면 보너스, 부정 비율이 높으면 페널티
+        positive_bonus = sentiment_data["positive_ratio"] * 30
+        negative_penalty = sentiment_data["negative_ratio"] * 40
+        
+        # 댓글 수가 많으면 신뢰도 보너스
+        comment_bonus = min(10, len(comments) / 10)
+        
+        adjusted_score = max(0, min(100, base_score + positive_bonus - negative_penalty + comment_bonus))
+        
         return SentimentScore(
-            score=sentiment_data["score"],
+            score=round(adjusted_score, 2),
             positive_ratio=sentiment_data["positive_ratio"],
             negative_ratio=sentiment_data["negative_ratio"],
             neutral_ratio=sentiment_data["neutral_ratio"],
@@ -29,37 +41,87 @@ class ROIService:
     ) -> ROIEstimate:
         """ROI 추정 계산"""
         
-        # 예상 조회수 (최근 평균 기반)
-        estimated_views = int(avg_views * 1.2)  # 20% 증가 가정
+        # 예상 조회수 (구독자 수 기반으로 현실적 계산)
+        # 일반적으로 조회수는 구독자 수의 10-30% 정도
+        if subscriber_count > 1000000:
+            estimated_views = int(subscriber_count * 0.15)  # 15%
+        elif subscriber_count > 100000:
+            estimated_views = int(subscriber_count * 0.20)  # 20%
+        elif subscriber_count > 10000:
+            estimated_views = int(subscriber_count * 0.25)  # 25%
+        else:
+            estimated_views = int(subscriber_count * 0.30)  # 30%
         
         # 예상 참여율 (기존 참여율 기반)
         estimated_engagement = min(engagement_rate * 1.1, 10.0)  # 10% 증가, 최대 10%
         
-        # CPM 계산 (구독자 수 기반)
+        # 인플루언서 협찬비 계산 (구독자 수 기반)
         if subscriber_count < 10000:
-            cpm = 500
+            cost_per_10k_subs = 5   # 1만명당 5만원
         elif subscriber_count < 100000:
-            cpm = 800
+            cost_per_10k_subs = 8   # 1만명당 8만원
         elif subscriber_count < 1000000:
-            cpm = 1200
+            cost_per_10k_subs = 12  # 1만명당 12만원
         else:
-            cpm = 2000
+            cost_per_10k_subs = 20  # 1만명당 20만원
         
-        # 예상 비용 계산
-        estimated_cost_value = (estimated_views / 1000) * cpm
+        # 예상 협찬비 계산 (만원 단위)
+        estimated_cost_value = (subscriber_count / 10000) * cost_per_10k_subs * 10000  # 원 단위
         estimated_cost = self._format_cost(estimated_cost_value)
         
-        # ROI 점수 계산 (0-100)
-        # 참여율, 조회수 대비 구독자 비율 등을 고려
+        # ROI 점수 계산 (0-100) - 실제 데이터 범위 반영
         view_to_subscriber_ratio = estimated_views / max(subscriber_count, 1)
-        roi_score = min(100, (estimated_engagement * 5) + (view_to_subscriber_ratio * 30) + 20)
+        
+        # 참여율 점수 (0-60점) - 실제 데이터: 1.09% ~ 5373.99%
+        if engagement_rate > 1000:
+            engagement_score = 60
+        elif engagement_rate > 500:
+            engagement_score = 55
+        elif engagement_rate > 200:
+            engagement_score = 50
+        elif engagement_rate > 100:
+            engagement_score = 45
+        elif engagement_rate > 50:
+            engagement_score = 40
+        elif engagement_rate > 20:
+            engagement_score = 30
+        elif engagement_rate > 10:
+            engagement_score = 20
+        elif engagement_rate > 5:
+            engagement_score = 10
+        else:
+            engagement_score = 0
+        
+        # 조회수/구독자 비율 점수 (0-25점)
+        if view_to_subscriber_ratio > 1.0:
+            view_ratio_score = 25
+        elif view_to_subscriber_ratio > 0.5:
+            view_ratio_score = 20
+        elif view_to_subscriber_ratio > 0.2:
+            view_ratio_score = 15
+        elif view_to_subscriber_ratio > 0.1:
+            view_ratio_score = 10
+        else:
+            view_ratio_score = 0
+        
+        # 구독자 수 점수 (0-15점)
+        if subscriber_count >= 1000000:
+            subscriber_score = 15
+        elif subscriber_count >= 100000:
+            subscriber_score = 10
+        elif subscriber_count >= 10000:
+            subscriber_score = 5
+        else:
+            subscriber_score = 0
+        
+        roi_score = engagement_score + view_ratio_score + subscriber_score
         
         return ROIEstimate(
             score=round(roi_score, 2),
             estimated_views=estimated_views,
             estimated_engagement=round(estimated_engagement, 2),
             estimated_cost=estimated_cost,
-            cpm=cpm
+            cpm=cost_per_10k_subs  # 1만명당 협찬비(만원)
         )
     
     def calculate_total_score(

@@ -55,8 +55,29 @@ class BrandService:
             channel_titles=channel_titles
         )
         
-        # 3. 종합 점수 계산 (이미지 60%, 텍스트 40%)
-        total_score = (image_score * 0.6 + text_score * 0.4)
+        # 3. 종합 점수 계산 - 극단적 분포 생성
+        base_score = (image_score * 0.4 + text_score * 0.6)
+        
+        # 4. 완벽 매칭 보너스 (최대 30점)
+        perfect_match_bonus = 0
+        if brand_category.lower() in channel_description.lower():
+            perfect_match_bonus += 20
+        if brand_tone.lower() in channel_description.lower():
+            perfect_match_bonus += 10
+        
+        # 5. 부분 매칭 보너스 (최대 15점)
+        partial_match_bonus = 0
+        if any(brand_category.lower() in title.lower() for title in channel_titles):
+            partial_match_bonus += 10
+        if len(channel_thumbnails) >= 3:
+            partial_match_bonus += 5
+        
+        # 6. 페널티 적용 (매칭이 전혀 없으면 감점)
+        penalty = 0
+        if not perfect_match_bonus and not partial_match_bonus:
+            penalty = 20
+        
+        total_score = max(0, min(100, base_score + perfect_match_bonus + partial_match_bonus - penalty))
         
         # 4. 상세 분석 결과
         details = {
@@ -72,8 +93,18 @@ class BrandService:
         }
         
         return BrandImageScore(
-            score=round(total_score, 2),
-            details=details
+            score=float(total_score),
+            details={
+                "image_similarity": float(image_score),
+                "text_compatibility": float(text_score),
+                "brand_category": brand_category,
+                "analysis_method": "CLIP + Sentence-BERT",
+                "channel_data_points": {
+                    "thumbnails_analyzed": len(channel_thumbnails),
+                    "titles_analyzed": len(channel_titles),
+                    "has_brand_image": bool(brand_image_url or brand_image_base64)
+                }
+            }
         )
     
     def get_compatibility_grade(self, score: float) -> str:

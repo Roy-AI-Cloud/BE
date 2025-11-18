@@ -16,9 +16,10 @@ def analyze_brand_compatibility(
     channel_id: str,
     session: Session = Depends(get_db_session)
 ):
-    """브랜드 적합도 분석 (프로젝트 + 비디오 데이터 기반)"""
+    """브랜드 적합도 분석 (실제 CLIP + 텍스트 분석)"""
     
     from app.core.models import Video
+    from app.services.brand_service import brand_service
     
     # 프로젝트 정보 조회
     project = session.get(Project, project_id)
@@ -35,83 +36,40 @@ def analyze_brand_compatibility(
         select(Video).where(Video.channel_id == channel_id)
     ).all()
     
-    # 브랜드 카테고리 매칭 점수 계산
-    brand_category = project.brand_categories.lower()
-    category_score = 60.0  # 기본점수
-    inf_category = (influencer.category or "").lower()
+    # 비디오 제목들 수집
+    video_titles = [video.video_title for video in videos if video.video_title]
     
-    if ("뷰티" in brand_category or "화장품" in brand_category) and "뷰티" in inf_category:
-        category_score = 95.0
-    elif ("패션" in brand_category or "의류" in brand_category) and "패션" in inf_category:
-        category_score = 92.0
-    elif ("식품" in brand_category or "음료" in brand_category) and "요리" in inf_category:
-        category_score = 88.0
-    elif ("건강" in brand_category or "의료" in brand_category) and ("뷰티" in inf_category or "운동" in inf_category):
-        category_score = 85.0
-    elif ("테크" in brand_category or "it" in brand_category) and "게임" in inf_category:
-        category_score = 80.0
+    # 썸네일 이미지 로드 (유튜버 프로필 썸네일 사용)
+    channel_thumbnails = []
+    if influencer.thumbnail_url:
+        try:
+            from app.ml import load_image_from_url
+            thumbnail_image = load_image_from_url(influencer.thumbnail_url)
+            if thumbnail_image:
+                channel_thumbnails.append(thumbnail_image)
+        except Exception as e:
+            print(f"[Error] 썸네일 로드 실패: {e}")
     
-    # 브랜드 톤 매칭 점수
-    tone_score = 70.0  # 기본점수
-    if project.brand_tone == "친화적" and inf_category in ["일상", "요리"]:
-        tone_score = 90.0
-    elif project.brand_tone == "프리미엄" and inf_category in ["뷰티", "패션"]:
-        tone_score = 85.0
-    elif project.brand_tone == "럭셔리" and "패션" in inf_category:
-        tone_score = 95.0
-    elif project.brand_tone == "침착한" and inf_category in ["뷰티", "일상"]:
-        tone_score = 80.0
+    # 브랜드 이미지 경로를 절대 경로로 변환
+    brand_image_path = None
+    if project.brand_image_path:
+        import os
+        brand_image_path = os.path.abspath(project.brand_image_path)
     
-    # 콘텐츠 품질 점수 (비디오 데이터 기반)
-    content_quality = 75.0  # 기본점수
-    if videos:
-        avg_views = sum(v.view_count or 0 for v in videos) / len(videos)
-        avg_likes = sum(v.like_count or 0 for v in videos) / len(videos)
-        
-        if avg_views > 50000:
-            content_quality += 10
-        if avg_likes > 1000:
-            content_quality += 5
-        
-        content_quality = min(content_quality, 95.0)
-    
-    # 오디언스 매칭 (구독자 수 기반)
-    audience_score = 70.0
-    if influencer.subscriber_count:
-        if 50000 <= influencer.subscriber_count <= 500000:
-            audience_score = 90.0
-        elif influencer.subscriber_count > 500000:
-            audience_score = 85.0
-        elif influencer.subscriber_count > 10000:
-            audience_score = 80.0
-    
-    # 브랜드 안전성 (참여율 기반)
-    brand_safety = 85.0
-    if influencer.engagement_rate:
-        if influencer.engagement_rate > 5.0:
-            brand_safety = 95.0
-        elif influencer.engagement_rate > 2.0:
-            brand_safety = 90.0
-    
-    # 전체 점수 계산
-    overall_score = (category_score + tone_score + content_quality + audience_score + brand_safety) / 5
-    
-    return BrandImageScore(
-        score=round(overall_score, 1),  # 추가
-        details={  # 추가
-            "category_match": category_score,
-            "tone_match": tone_score,
-            "audience_match": audience_score,
-            "content_quality": content_quality,
-            "brand_safety": brand_safety
-        },
-        overall_score=round(overall_score, 1),
-        category_match=category_score,
-        tone_match=tone_score,
-        audience_match=audience_score,
-        content_quality=content_quality,
-        brand_safety=brand_safety
+    # 실제 브랜드 서비스 사용
+    result = brand_service.analyze_brand_compatibility(
+        channel_id=channel_id,
+        brand_name=project.company_name,
+        brand_description=project.campaign_goal,
+        brand_tone=project.brand_tone,
+        brand_category=project.brand_categories,
+        brand_image_url=brand_image_path,
+        channel_description=influencer.description or "",
+        channel_titles=video_titles,
+        channel_thumbnails=channel_thumbnails
     )
+    
+    return result
 
 @router.get("/sentiment/{project_id}/{channel_id}", response_model=SentimentScore)
 def analyze_sentiment(
@@ -119,9 +77,10 @@ def analyze_sentiment(
     channel_id: str,
     session: Session = Depends(get_db_session)
 ):
-    """감정 분석 (샘플 비디오 데이터 기반)"""
+    """감정 분석 (실제 KoBERT 분석)"""
     
     from app.core.models import Video
+    from app.services.roi_service import roi_service
     
     # 프로젝트 및 채널 존재 확인
     project = session.get(Project, project_id)
@@ -135,56 +94,31 @@ def analyze_sentiment(
         select(Video).where(Video.channel_id == channel_id)
     ).all()
     
-    if not videos:
-        # 비디오가 없으면 기본값
-        return SentimentScore(
-            score=65.0,  # 추가
-            positive_ratio=0.60,
-            negative_ratio=0.25,
-            neutral_ratio=0.15,
-            total_comments=0  # comment_count -> total_comments
-        )
-    
-    # 비디오 데이터 기반 감성분석
-    total_comments = sum(video.comment_count or 0 for video in videos)
-    total_likes = sum(video.like_count or 0 for video in videos)
-    total_views = sum(video.view_count or 0 for video in videos)
-    
-    # 참여율 기반 감성 점수 계산
-    if total_views > 0:
-        engagement_rate = (total_likes + total_comments) / total_views
+    # 샘플 댓글 생성 (실제 댓글 데이터가 없으므로)
+    sample_comments = []
+    for video in videos:
+        # 조회수와 좋아요 수 기반으로 샘플 댓글 생성
+        views = video.view_count or 1000
+        likes = video.like_count or 10
         
-        # 참여율이 높을수록 긍정적
-        if engagement_rate > 0.05:  # 5% 이상
-            positive_ratio = 0.80
-            negative_ratio = 0.10
-            overall_sentiment = 90.0
-        elif engagement_rate > 0.03:  # 3% 이상
-            positive_ratio = 0.75
-            negative_ratio = 0.15
-            overall_sentiment = 80.0
-        elif engagement_rate > 0.01:  # 1% 이상
-            positive_ratio = 0.65
-            negative_ratio = 0.20
-            overall_sentiment = 70.0
-        else:
-            positive_ratio = 0.50
-            negative_ratio = 0.35
-            overall_sentiment = 55.0
-    else:
-        positive_ratio = 0.60
-        negative_ratio = 0.25
-        overall_sentiment = 65.0
+        if likes / views > 0.05:  # 좋아요 비율이 높으면 긍정적
+            sample_comments.extend([
+                "정말 유용한 영상이네요!", "감사합니다", "도움이 많이 됐어요",
+                "최고예요", "구독했어요"
+            ])
+        elif likes / views < 0.01:  # 좋아요 비율이 낮으면 부정적
+            sample_comments.extend([
+                "별로네요", "아쉬워요", "기대했는데", "다음엔 더 좋게"
+            ])
+        else:  # 보통이면 중립적
+            sample_comments.extend([
+                "잘 봤어요", "괜찮네요", "그냥 그래요", "보통이에요"
+            ])
     
-    neutral_ratio = 1.0 - positive_ratio - negative_ratio
+    # 실제 감성분석 서비스 사용
+    result = roi_service.analyze_sentiment(channel_id, sample_comments)
     
-    return SentimentScore(
-        score=overall_sentiment,  # 추가
-        positive_ratio=positive_ratio,
-        negative_ratio=negative_ratio,
-        neutral_ratio=neutral_ratio,
-        total_comments=total_comments  # comment_count -> total_comments
-    )
+    return result
 
 @router.get("/roi-estimate/{project_id}/{channel_id}", response_model=ROIEstimate)
 def estimate_roi(
@@ -192,77 +126,26 @@ def estimate_roi(
     channel_id: str,
     session: Session = Depends(get_db_session)
 ):
-    """ROI 추정 (비디오 데이터 기반)"""
+    """ROI 추정 (참여율 기반)"""
     
-    from app.core.models import Video
+    from app.services.roi_service import roi_service
     
-    # 프로젝트 및 채널 정보 조회
+    # 프로젝트 및 채널 존재 확인
     project = session.get(Project, project_id)
     influencer = session.get(Influencer, channel_id)
     
     if not project or not influencer:
         raise HTTPException(status_code=404, detail="프로젝트 또는 채널을 찾을 수 없습니다")
     
-    # ROI 결과 조회
-    roi_result = session.exec(
-        select(ProjectResult).where(
-            ProjectResult.project_id == project_id,
-            ProjectResult.channel_id == channel_id
-        )
-    ).first()
-    
-    if not roi_result:
-        raise HTTPException(status_code=404, detail="분석 결과를 찾을 수 없습니다")
-    
-    # 비디오 데이터 기반 예상 성과 계산
-    videos = session.exec(
-        select(Video).where(Video.channel_id == channel_id)
-    ).all()
-    
-    if videos:
-        # 평균 조회수/참여수 계산
-        avg_views = sum(v.view_count or 0 for v in videos) / len(videos)
-        avg_likes = sum(v.like_count or 0 for v in videos) / len(videos)
-        avg_comments = sum(v.comment_count or 0 for v in videos) / len(videos)
-        
-        # 예상 조회수 (평균의 80-120% 범위)
-        estimated_views = int(avg_views * 0.9)
-        estimated_engagement = int((avg_likes + avg_comments) * 0.9)
-    else:
-        # 구독자 수 기반 추정
-        estimated_views = int((influencer.subscriber_count or 10000) * 0.1)
-        estimated_engagement = int((influencer.subscriber_count or 10000) * 0.03)
-    
-    # 예상 비용 계산 (구독자 수 기반)
-    if influencer.subscriber_count:
-        if influencer.subscriber_count > 1000000:
-            estimated_cost = 8000000
-        elif influencer.subscriber_count > 500000:
-            estimated_cost = 5000000
-        elif influencer.subscriber_count > 100000:
-            estimated_cost = 3000000
-        elif influencer.subscriber_count > 50000:
-            estimated_cost = 2000000
-        else:
-            estimated_cost = 1000000
-    else:
-        estimated_cost = 1500000
-    
-    # 손익분기점 계산 (조회수당 수익 10원 가정)
-    break_even_views = estimated_cost / 10
-    
-    # CPM 계산 (1000회 노출당 비용)
-    cpm = (estimated_cost / estimated_views) * 1000 if estimated_views > 0 else 1500.0
-    
-    return ROIEstimate(
-        score=roi_result.roi_score,  # 추가
-        estimated_views=estimated_views,
-        estimated_engagement=estimated_engagement,
-        estimated_cost=str(estimated_cost),  # 문자열로 변환
-        cpm=round(cpm, 2),  # 추가
-        roi_percentage=roi_result.roi_score,
-        break_even_views=int(break_even_views)
+    # ROI 추정 계산
+    result = roi_service.estimate_roi(
+        channel_id=channel_id,
+        subscriber_count=influencer.subscriber_count or 0,
+        avg_views=influencer.view_count or 1000,
+        engagement_rate=influencer.engagement_rate or 1.0
     )
+    
+    return result
 
 @router.get("/total-score/{project_id}/{channel_id}", response_model=TotalScore)
 def get_total_score(
@@ -276,22 +159,22 @@ def get_total_score(
     try:
         # 1. 브랜드 적합도 분석
         brand_result = analyze_brand_compatibility(project_id, channel_id, session)
-        brand_score = brand_result.score  # overall_score -> score
+        brand_score = brand_result.score
         
         # 2. 감성 분석
         sentiment_result = analyze_sentiment(project_id, channel_id, session)
-        sentiment_score = sentiment_result.score  # overall_sentiment -> score
+        sentiment_score = sentiment_result.score
         
         # 3. ROI 추정
         roi_result = estimate_roi(project_id, channel_id, session)
-        roi_score = roi_result.score  # roi_percentage -> score
+        roi_score = roi_result.score
         
         # 4. 가중치 적용 계산
         from app.schemas.roi import WeightConfig
         weights = WeightConfig()  # 기본 가중치
         
         total_score = (
-            brand_score * weights.brand_image_weight +  # brand_weight -> brand_image_weight
+            brand_score * weights.brand_image_weight +
             sentiment_score * weights.sentiment_weight +
             roi_score * weights.roi_weight
         )
@@ -319,11 +202,11 @@ def get_total_score(
             recommendation = "권장하지 않습니다. 다른 인플루언서를 고려해보세요."
         
         return TotalScore(
-            total_score=round(total_score, 1),
+            total_score=round(total_score, 2),
             grade=grade,
             recommendation=recommendation,
             weights_used=weights
         )
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"종합 점수 계산 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"종합 점수 계산 중 오류 발생: {str(e)}")

@@ -1,6 +1,6 @@
 # InfluROI YouTube API
 
-유튜버 마케팅 ROI 분석 및 시뮬레이터 API
+유튜버 마케팅 ROI 분석 및 브랜드 적합도 API
 
 ## 📋 개요
 

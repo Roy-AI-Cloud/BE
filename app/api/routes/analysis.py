@@ -90,12 +90,11 @@ def analyze_sentiment(
         raise HTTPException(status_code=404, detail="프로젝트 또는 채널을 찾을 수 없습니다")
     
     # 해당 채널의 댓글 데이터 조회
-    cursor = session.connection().execute("""
-        SELECT comment_text FROM comment 
-        WHERE channel_id = ? 
-        ORDER BY like_count DESC 
-        LIMIT 50
-    """, (channel_id,))
+    from sqlalchemy import text
+    cursor = session.connection().execute(
+        text("SELECT comment_text FROM comment WHERE channel_id = :channel_id ORDER BY like_count DESC LIMIT 50"),
+        {"channel_id": channel_id}
+    )
     
     comments = [row[0] for row in cursor.fetchall()]
     

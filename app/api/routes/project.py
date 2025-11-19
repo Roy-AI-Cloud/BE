@@ -128,37 +128,64 @@ def get_project_youtubers(
     
     youtubers_with_total_score = []
     
+    # 1단계: 모든 유튜버의 원시 점수 계산
+    raw_scores = []
     for result, influencer in results:
         try:
-            # 각 유튜버별 종합점수 계산
             from app.api.routes.analysis import get_total_score
             total_score_result = get_total_score(project_id, influencer.channel_id, session)
-            
-            youtubers_with_total_score.append(YoutuberWithROI(
-                channel_id=result.channel_id,
-                title=influencer.title,
-                subscriber_count=influencer.subscriber_count,
-                thumbnail_url=influencer.thumbnail_url,
-                category=influencer.category or "미분류",
-                engagement_rate=influencer.engagement_rate,
-                estimated_price=influencer.estimated_price or "가격 문의",
-                total_score=total_score_result.total_score,  # 필드명 변경
-                grade=total_score_result.grade  # 필드명 변경
-            ))
-            
+            raw_scores.append({
+                'result': result,
+                'influencer': influencer,
+                'raw_score': total_score_result.total_score
+            })
         except Exception as e:
-            # 종합점수 계산 실패시 기존 roi_score 사용
-            youtubers_with_total_score.append(YoutuberWithROI(
-                channel_id=result.channel_id,
-                title=influencer.title,
-                subscriber_count=influencer.subscriber_count,
-                thumbnail_url=influencer.thumbnail_url,
-                category=influencer.category or "미분류",
-                engagement_rate=influencer.engagement_rate,
-                estimated_price=influencer.estimated_price or "가격 문의",
-                total_score=result.roi_score,  # 필드명 변경
-                grade=result.roi_grade  # 필드명 변경
-            ))
+            raw_scores.append({
+                'result': result,
+                'influencer': influencer,
+                'raw_score': result.roi_score
+            })
+    
+    # 2단계: 백분위수 기반 등급 재분배
+    scores = [item['raw_score'] for item in raw_scores]
+    scores.sort(reverse=True)
+    
+    def get_percentile_grade(score, all_scores):
+        """백분위수 기반 등급 계산"""
+        total_count = len(all_scores)
+        rank = all_scores.index(score) + 1
+        percentile = (rank / total_count) * 100
+        
+        if percentile <= 20:  # 상위 20%
+            return "S"
+        elif percentile <= 40:  # 상위 21-40%
+            return "A"
+        elif percentile <= 60:  # 상위 41-60%
+            return "B"
+        elif percentile <= 80:  # 상위 61-80%
+            return "C"
+        else:  # 하위 20%
+            return "D"
+    
+    # 3단계: 최종 결과 생성
+    youtubers_with_total_score = []
+    for item in raw_scores:
+        result = item['result']
+        influencer = item['influencer']
+        raw_score = item['raw_score']
+        grade = get_percentile_grade(raw_score, scores)
+        
+        youtubers_with_total_score.append(YoutuberWithROI(
+            channel_id=result.channel_id,
+            title=influencer.title,
+            subscriber_count=influencer.subscriber_count,
+            thumbnail_url=influencer.thumbnail_url,
+            category=influencer.category or "미분류",
+            engagement_rate=influencer.engagement_rate,
+            estimated_price=influencer.estimated_price or "가격 문의",
+            total_score=raw_score,
+            grade=grade
+        ))
     
     # total_score 기준으로 정렬
     return sorted(youtubers_with_total_score, key=lambda x: x.total_score, reverse=True)

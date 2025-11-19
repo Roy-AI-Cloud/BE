@@ -131,27 +131,60 @@ class ROIService:
         roi_score: float,
         weights: WeightConfig
     ) -> TotalScore:
-        """종합 점수 계산"""
+        """종합 점수 계산 (정규화 적용)"""
+        
+        # 각 점수를 0-100 범위로 정규화
+        normalized_brand = self._normalize_score(brand_score, 0, 100)
+        normalized_sentiment = self._normalize_score(sentiment_score, 0, 100) 
+        normalized_roi = self._normalize_score(roi_score, 0, 100)
         
         # 가중 평균 계산
         total_score = (
-            brand_score * weights.brand_image_weight +
-            sentiment_score * weights.sentiment_weight +
-            roi_score * weights.roi_weight
+            normalized_brand * weights.brand_image_weight +
+            normalized_sentiment * weights.sentiment_weight +
+            normalized_roi * weights.roi_weight
         )
         
+        # 시그모이드 함수로 점수 분포 조정 (더 고른 분포)
+        adjusted_score = self._sigmoid_adjustment(total_score)
+        
         # 등급 계산
-        grade = self._calculate_grade(total_score)
+        grade = self._calculate_grade(adjusted_score)
         
         # 추천 메시지 생성
-        recommendation = self._generate_recommendation(total_score, grade)
+        recommendation = self._generate_recommendation(adjusted_score, grade)
         
         return TotalScore(
-            total_score=round(total_score, 2),
+            total_score=round(adjusted_score, 2),
             grade=grade,
             recommendation=recommendation,
             weights_used=weights
         )
+    
+    def _normalize_score(self, score: float, min_val: float, max_val: float) -> float:
+        """점수를 0-100 범위로 정규화"""
+        if max_val == min_val:
+            return 50.0
+        normalized = ((score - min_val) / (max_val - min_val)) * 100
+        return max(0, min(100, normalized))
+    
+    def _sigmoid_adjustment(self, score: float) -> float:
+        """점수 분포를 S~D 등급에 고르게 분산"""
+        import math
+        
+        # 입력 점수를 기반으로 더 넓은 범위의 출력 생성
+        # 30-95 범위로 확장하여 모든 등급이 나올 수 있도록 조정
+        
+        # 1단계: 점수를 0-1 범위로 정규화
+        normalized = score / 100
+        
+        # 2단계: 지수 함수로 분포 조정 (상위 점수에 더 많은 가중치)
+        adjusted = math.pow(normalized, 0.7)  # 0.7 지수로 곡선 조정
+        
+        # 3단계: 30-95 범위로 확장
+        final_score = 30 + (adjusted * 65)
+        
+        return max(30, min(95, final_score))
     
     def _format_cost(self, cost: float) -> str:
         """비용을 읽기 쉬운 형태로 포맷"""

@@ -63,7 +63,7 @@ def analyze_brand_compatibility(
         brand_description=project.campaign_goal,
         brand_tone=project.brand_tone,
         brand_category=project.brand_categories,
-        brand_image_url=brand_image_path,
+        brand_image_path=project.brand_image_path,
         channel_description=influencer.description or "",
         channel_titles=video_titles,
         channel_thumbnails=channel_thumbnails

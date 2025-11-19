@@ -14,6 +14,7 @@ class ProjectInfo(BaseModel):
     brand_categories: str
     brand_tone: str
     campaign_goal: str
+    brand_image_path: Optional[str] = None
     created_at: datetime
     total_youtubers: int  # 분석된 유튜버 수
 

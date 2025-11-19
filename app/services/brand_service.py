@@ -23,6 +23,7 @@ class BrandService:
         brand_category: str,
         brand_image_url: Optional[str] = None,
         brand_image_base64: Optional[str] = None,
+        brand_image_path: Optional[str] = None,
         channel_description: str = "",
         channel_titles: List[str] = None,
         channel_thumbnails: List[Image.Image] = None
@@ -36,12 +37,21 @@ class BrandService:
         
         # 1. 이미지 유사도 분석
         image_score = 50.0
-        if brand_image_url or brand_image_base64:
+        if brand_image_url or brand_image_base64 or brand_image_path:
             brand_image = None
             if brand_image_url:
                 brand_image = load_image_from_url(brand_image_url)
             elif brand_image_base64:
                 brand_image = load_image_from_base64(brand_image_base64)
+            elif brand_image_path:
+                # 로컬 파일 처리
+                try:
+                    import os
+                    if os.path.exists(brand_image_path):
+                        from PIL import Image
+                        brand_image = Image.open(brand_image_path).convert("RGB")
+                except Exception as e:
+                    print(f"[Error] 로컬 이미지 로드 실패 ({brand_image_path}): {e}")
             
             if brand_image and channel_thumbnails:
                 image_score = calculate_image_similarity(brand_image, channel_thumbnails)
@@ -55,29 +65,38 @@ class BrandService:
             channel_titles=channel_titles
         )
         
-        # 3. 종합 점수 계산 - 극단적 분포 생성
-        base_score = (image_score * 0.4 + text_score * 0.6)
+        # 3. 종합 점수 계산 - 극단적 차별화
+        base_score = (image_score * 0.3 + text_score * 0.7)  # 텍스트 가중치 증가
         
-        # 4. 완벽 매칭 보너스 (최대 30점)
+        # 4. 완벽 매칭 보너스 (최대 40점)
         perfect_match_bonus = 0
         if brand_category.lower() in channel_description.lower():
-            perfect_match_bonus += 20
+            perfect_match_bonus += 25  # 카테고리 매칭 보너스 증가
         if brand_tone.lower() in channel_description.lower():
-            perfect_match_bonus += 10
+            perfect_match_bonus += 15  # 톤 매칭 보너스 증가
         
-        # 5. 부분 매칭 보너스 (최대 15점)
+        # 5. 부분 매칭 보너스 (최대 25점)
         partial_match_bonus = 0
         if any(brand_category.lower() in title.lower() for title in channel_titles):
-            partial_match_bonus += 10
+            partial_match_bonus += 15  # 제목 매칭 보너스 증가
         if len(channel_thumbnails) >= 3:
-            partial_match_bonus += 5
+            partial_match_bonus += 10  # 썸네일 보너스 증가
         
-        # 6. 페널티 적용 (매칭이 전혀 없으면 감점)
+        # 6. 카테고리별 특별 보너스 (최대 20점)
+        category_special_bonus = 0
+        if brand_category == "뷰티" and "뷰티" in channel_description:
+            category_special_bonus = 20
+        elif brand_category == "패션" and "패션" in channel_description:
+            category_special_bonus = 18
+        elif brand_category == "요리" and "요리" in channel_description:
+            category_special_bonus = 15
+        
+        # 7. 페널티 강화 (매칭이 전혀 없으면 대폭 감점)
         penalty = 0
         if not perfect_match_bonus and not partial_match_bonus:
-            penalty = 20
+            penalty = 35  # 페널티 증가
         
-        total_score = max(0, min(100, base_score + perfect_match_bonus + partial_match_bonus - penalty))
+        total_score = max(0, min(100, base_score + perfect_match_bonus + partial_match_bonus + category_special_bonus - penalty))
         
         # 4. 상세 분석 결과
         details = {

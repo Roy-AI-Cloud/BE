@@ -26,3 +26,4 @@ __test__/
 *.json
 
 db/influencer.db
+/uploads

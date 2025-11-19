@@ -57,8 +57,8 @@ class ModelManager:
             try:
                 print("[ModelManager] Loading KoBERT model...")
                 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-                self._kobert_tokenizer = AutoTokenizer.from_pretrained(settings.KOBERT_MODEL)
-                self._kobert_model = AutoModelForSequenceClassification.from_pretrained(settings.KOBERT_MODEL)
+                self._kobert_tokenizer = AutoTokenizer.from_pretrained(settings.KOBERT_MODEL, trust_remote_code=True)
+                self._kobert_model = AutoModelForSequenceClassification.from_pretrained(settings.KOBERT_MODEL, trust_remote_code=True)
                 self._kobert_model = self._kobert_model.to(self._device)
                 self._kobert_model.eval()
                 print(f"[ModelManager] KoBERT model loaded on {self._device}")

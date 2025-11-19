@@ -45,8 +45,8 @@ def analyze_sentiment_kobert(texts: List[str]) -> List[Dict]:
                 predicted_class = torch.argmax(predictions, dim=-1).item()
                 confidence = predictions[0][predicted_class].item()
             
-            # 결과 매핑 (0: negative, 1: neutral, 2: positive)
-            sentiment_map = {0: "negative", 1: "neutral", 2: "positive"}
+            # 결과 매핑 (0: negative, 1: positive)
+            sentiment_map = {0: "negative", 1: "positive"}
             
             results.append({
                 "text": text,
@@ -54,8 +54,8 @@ def analyze_sentiment_kobert(texts: List[str]) -> List[Dict]:
                 "confidence": confidence,
                 "scores": {
                     "negative": predictions[0][0].item(),
-                    "neutral": predictions[0][1].item(),
-                    "positive": predictions[0][2].item()
+                    "neutral": 0.0,  # 중립은 0으로 설정
+                    "positive": predictions[0][1].item()
                 }
             })
         

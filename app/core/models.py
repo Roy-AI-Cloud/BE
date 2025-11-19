@@ -15,10 +15,20 @@ class Video(SQLModel, table=True):
     view_count: Optional[int] = None
     like_count: Optional[int] = None
     comment_count: Optional[int] = None
+    channel_id: Optional[str] = Field(default=None, foreign_key="influencer.channel_id")
+    thumbnail_url: Optional[str] = None
 
     # Influencer와의 관계
-    channel_id: Optional[str] = Field(default=None, foreign_key="influencer.channel_id")
     channel: Optional["Influencer"] = Relationship(back_populates="videos")
+
+# Comment 테이블 정의
+class Comment(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    video_id: str = Field(foreign_key="video.video_id")
+    channel_id: str = Field(foreign_key="influencer.channel_id")
+    comment_text: str
+    like_count: Optional[int] = None
+    published_at: Optional[datetime] = None
 
 # Influencer 테이블 정의
 class Influencer(SQLModel, table=True):

@@ -1,6 +1,6 @@
 # InfluROI YouTube API
 
-유튜버 마케팅 ROI 분석 및 시뮬레이터 API
+유튜버 마케팅 ROI 분석 및 브랜드 적합도 API
 
 ## 📋 개요
 
@@ -11,7 +11,7 @@ InfluROI는 유튜버와 브랜드 간의 마케팅 협업에서 ROI(투자 수�
 - **프로젝트 기반 분석**: 브랜드 정보를 프로젝트로 저장하여 일관된 분석
 - **종합 점수 계산**: 브랜드 적합도(40%) + 감성분석(30%) + ROI 추정(30%)
 - **유튜버 데이터 수집**: YouTube API를 통한 채널 및 비디오 데이터 수집
-- **실시간 분석**: 샘플 비디오 데이터 기반 실제 분석 수행
+- **실시간 분석**: 실제 YouTube API 데이터 기반 분석 수행
 - **비교 분석**: 여러 유튜버 또는 가중치 비교
 - **자동 등급 산정**: S, A, B, C, D 등급 자동 계산
 
@@ -104,18 +104,27 @@ SBERT_MODEL=sentence-transformers/xlm-r-100langs-bert-base-nli-stsb-mean-tokens
 KOBERT_MODEL=monologg/kobert
 ```
 
-### 3. 데이터베이스 초기화 혹은 팀원에게 전달받기
+### 3. 데이터베이스 초기화
 
 ```bash
 # 데이터베이스 테이블 생성
 python -c "from app.core.database import create_db_and_tables; create_db_and_tables()"
 
+# 스키마 업데이트 (썸네일, 댓글 테이블 추가)
+python scripts/update_schema.py
+
 # 유튜버 데이터 수집 (YouTube API 할당량 필요)
-python crawler.py
+python scripts/crawler.py
 
 # 샘플 비디오 데이터 생성
-python create_sample_videos.py
+python scripts/create_sample_videos.py
+
+# 썸네일 및 댓글 데이터 추가
+python scripts/add_sample_thumbnails.py
+python scripts/add_sample_comments.py
 ```
+
+**참고**: 자세한 스크립트 사용법은 [`scripts/README.md`](./scripts/README.md)를 참조하세요.
 
 ### 4. 서버 실행
 
@@ -204,9 +213,3 @@ total_score = 브랜드적합도(40%) + 감성분석(30%) + ROI추정(30%)
 - **Video**: 유튜버별 샘플 비디오 데이터 (3-5개씩)
 - **Project**: 브랜드 프로젝트 정보
 - **ProjectResult**: 프로젝트별 유튜버 ROI 결과
-
-## ⚠️ 주의사항
-
-- YouTube API 할당량 제한으로 실시간 데이터 수집에 제약
-- 현재 샘플 비디오 데이터 기반으로 분석 수행
-- 실제 서비스 배포 시 PostgreSQL 등 운영 DB 권장

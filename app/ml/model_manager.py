@@ -58,8 +58,13 @@ class ModelManager:
                 print("[ModelManager] Loading KoBERT model...")
                 from transformers import AutoTokenizer, AutoModelForSequenceClassification
                 self._kobert_tokenizer = AutoTokenizer.from_pretrained(settings.KOBERT_MODEL, trust_remote_code=True)
-                self._kobert_model = AutoModelForSequenceClassification.from_pretrained(settings.KOBERT_MODEL, trust_remote_code=True)
-                self._kobert_model = self._kobert_model.to(self._device)
+                # device_map 파라미터로 직접 디바이스 지정 (meta tensor 문제 해결)
+                self._kobert_model = AutoModelForSequenceClassification.from_pretrained(
+                    settings.KOBERT_MODEL, 
+                    trust_remote_code=True,
+                    device_map=str(self._device),
+                    torch_dtype=torch.float32  # 명시적으로 float32 사용
+                )
                 self._kobert_model.eval()
                 print(f"[ModelManager] KoBERT model loaded on {self._device}")
             except Exception as e:

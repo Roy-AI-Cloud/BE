@@ -68,7 +68,7 @@ class Project(SQLModel, table=True):
     brand_image_path: Optional[str] = None  # 브랜드 이미지 파일 경로
     created_at: Optional[datetime] = Field(default_factory=datetime.now)
 
-# 프로젝트별 유튜버 ROI 결과
+# 프로젝트별 유튜버 총합점수 결과
 class ProjectResult(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     project_id: str = Field(foreign_key="project.project_id")

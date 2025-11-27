@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form
+from fastapi import APIRouter, Depends, UploadFile, File, Form, BackgroundTasks
 from sqlmodel import Session, select
 from typing import List, Optional
 import uuid
@@ -7,6 +7,7 @@ import os
 import math
 from app.schemas.project import YoutuberWithROI, ProjectInfo
 from app.core.models import Project, ProjectResult, Influencer
+from app.core.database import engine
 from app.api.deps import get_db_session
 from app.services.roi_service import roi_service
 from app.services.brand_service import brand_service
@@ -68,8 +69,48 @@ def calculate_roi_score(influencer, project):
         # 오류 발생시 기본값 반환
         return 50.0, "C"
 
+def analyze_project_background(project_id: str):
+    """
+    백그라운드에서 실행되는 프로젝트 분석 작업
+    모든 인플루언서에 대해 점수를 계산하고 DB에 저장합니다.
+    """
+    # 백그라운드 작업은 별도의 세션을 열어야 함
+    with Session(engine) as session:
+        # 1. 프로젝트 조회
+        project = session.get(Project, project_id)
+        if not project:
+            return
+
+        # 2. 분석 대상 인플루언서 전체 조회
+        influencers = session.exec(select(Influencer)).all()
+        
+        results_to_add = []
+        
+        for influencer in influencers:
+            try:
+                # 기존 계산 로직 재사용
+                total_score, grade = calculate_roi_score(influencer, project)
+                
+                # 결과 객체 생성
+                result = ProjectResult(
+                    project_id=project_id,
+                    channel_id=influencer.channel_id,
+                    roi_score=total_score, # 계산된 원점수 저장
+                    roi_grade=grade
+                )
+                results_to_add.append(result)
+            except Exception as e:
+                print(f"Error analyzing influencer {influencer.channel_id}: {e}")
+                continue
+        
+        # 3. DB 일괄 저장
+        if results_to_add:
+            session.add_all(results_to_add)
+            session.commit()
+
 @router.post("/create", response_model=ProjectInfo)
 async def create_project(
+    background_tasks: BackgroundTasks,
     company_name: str = Form(...),
     brand_categories: str = Form(...),
     brand_tone: str = Form(...),
@@ -77,7 +118,7 @@ async def create_project(
     brand_image: Optional[UploadFile] = File(None),
     session: Session = Depends(get_db_session)
 ):
-    """프로젝트 생성"""
+    """프로젝트 생성 (백그라운드 분석 적용)"""
     
     project_id = str(uuid.uuid4())
     
@@ -86,11 +127,12 @@ async def create_project(
     if brand_image:
         os.makedirs("uploads", exist_ok=True)
         brand_image_path = f"uploads/{project_id}_{brand_image.filename}"
-        with open(brand_image_path, "wb") as f:
+        
+        with open(brand_image_path, "wb") as buffer:
             content = await brand_image.read()
-            f.write(content)
+            buffer.write(content)
     
-    # 프로젝트 생성
+    # 프로젝트 DB 저장
     project = Project(
         project_id=project_id,
         company_name=company_name,
@@ -101,6 +143,9 @@ async def create_project(
     )
     session.add(project)
     session.commit()
+    
+    # 백그라운드 분석 작업 등록
+    background_tasks.add_task(analyze_project_background, project_id)
     
     return ProjectInfo(
         project_id=project_id,
@@ -187,27 +232,21 @@ def get_project_youtubers(
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다")
     
-    # 2. DB 데이터 조회
+    # 2. DB 데이터 조회 (이미 계산된 점수 활용)
     query = select(ProjectResult, Influencer).join(
         Influencer, ProjectResult.channel_id == Influencer.channel_id
     ).where(ProjectResult.project_id == project_id)
     
     results = session.exec(query).all()
     
-    # 3. 1차 리스트 생성 (여기서는 원점수 Raw Score를 수집합니다)
+    # 3. 1차 리스트 생성 (DB에 저장된 점수 사용)
     raw_youtuber_list = []
     
     for result, influencer in results:
-        try:
-            # 기존 분석 로직 호출 (이 함수가 '순수 가중평균'을 리턴한다고 가정)
-            from app.api.routes.analysis import get_total_score
-            total_score_result = get_total_score(project_id, influencer.channel_id, session)
-            current_score = total_score_result.total_score
-        except Exception:
-            # 에러 시 기존 DB값 혹은 기본값 사용
-            current_score = result.roi_score if result.roi_score else 50.0
+        # DB에 저장된 점수 사용 (없으면 기본값)
+        current_score = result.roi_score if result.roi_score is not None else 50.0
 
-        # YoutuberWithROI 객체 생성 (일단 현재 점수로 담기)
+        # YoutuberWithROI 객체 생성
         youtuber_obj = YoutuberWithROI(
             channel_id=result.channel_id,
             title=influencer.title,
@@ -216,8 +255,8 @@ def get_project_youtubers(
             category=influencer.category or "미분류",
             engagement_rate=influencer.engagement_rate,
             estimated_price=influencer.estimated_price or "가격 문의",
-            total_score=current_score,  # 원점수
-            grade="B" # 임시 등급
+            total_score=current_score,  # 저장된 원점수
+            grade="B" # 임시 등급 (아래에서 재계산)
         )
         raw_youtuber_list.append(youtuber_obj)
     

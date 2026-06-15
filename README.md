@@ -18,7 +18,7 @@ InfluROI는 유튜버와 브랜드 간의 마케팅 협업에서 ROI(투자 수�
 ## 🏗️ 프로젝트 구조
 
 ```
-infloi/
+influoi/
 ├── app/
 │   ├── api/                    # API 엔드포인트
 │   │   ├── routes/
